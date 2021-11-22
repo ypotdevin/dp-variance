@@ -112,6 +112,7 @@ def _naive_local_sensitivity(
     return local_sens
 
 def test_tunings(n: int = 200, seed: Optional[int] = None) -> None:
+    seed = 42
     rng = np.random.default_rng(seed)
     L = -0.5
     U = 0.5
@@ -120,16 +121,17 @@ def test_tunings(n: int = 200, seed: Optional[int] = None) -> None:
         k = rng.integers(low = 0, high = n)
         sample = rng.random(size = n) - 0.5
         sample.sort()
+
         wcn = dp_variance._worst_case_k_neighbor(
-            k, sample, 'max_var', L, U, mean
+            k, sample, 'max_var', L, U, mean, np.std
         )
         ls1 = _naive_local_sensitivity(wcn, L, U, mean)
-        ls2 = dp_variance._local_sensitivity(wcn, k, L, U, mean)
+        ls2 = dp_variance._local_sensitivity(wcn, k, L, U, mean, np.std)
         assert(np.isclose(ls1, ls2))
 
         wcn = dp_variance._worst_case_k_neighbor(
-            k, sample, 'min_var', L, U, mean
+            k, sample, 'min_var', L, U, mean, np.std
         )
         ls1 = _naive_local_sensitivity(wcn, L, U, mean)
-        ls2 = dp_variance._local_sensitivity(wcn, k, L, U, mean)
+        ls2 = dp_variance._local_sensitivity(wcn, k, L, U, mean, np.std)
         assert(np.isclose(ls1, ls2))

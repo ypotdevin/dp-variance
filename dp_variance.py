@@ -33,17 +33,66 @@ def dp_standard_deviation(
     seed : int
         A random seed used to draw from the Cauchy distribution.
     """
+    return _dp_disp('std', sample, mean, epsilon, beta, m, L, U, seed)
+
+def dp_variance(
+        sample: Sequence[float],
+        mean: float,
+        epsilon: float,
+        beta: float,
+        m: int,
+        L: float,
+        U: float,
+        seed: Optional[int] = None,
+    ) -> float:
+    """
+    Parameters
+    ----------
+    sample : Sequence[float]
+        The sample to compute the variance for, in a differentially
+        private manner.
+    mean : float
+    epsilon : float
+        The differential privacy parameter.
+    beta : float
+        The beta-smooth sensitivity parameter.
+    m : int, optional
+        The trimming parameter (discard the m smallest and m largest
+        elements in `sample`.
+    seed : int
+        A random seed used to draw from the Cauchy distribution.
+    """
+    return _dp_disp('var', sample, mean, epsilon, beta, m, L, U, seed)
+
+def _dp_disp(
+        dispersion: str,
+        sample: Sequence[float],
+        mean: float,
+        epsilon: float,
+        beta: float,
+        m: int,
+        L: float,
+        U: float,
+        seed: Optional[int] = None,
+    ) -> float:
+    if dispersion == 'std':
+        dispersion_fun = np.std
+    elif dispersion == 'var':
+        dispersion_fun = np.var
+    else:
+        raise ValueError(
+            "Expected one of 'var' or 'std'. Got {}.".format(dispersion)
+        )
     assert epsilon > 0 and beta > 0 and m >= 0 and L < U
-    logging.debug("calculating dp std for %s", str(sample))
+    logging.debug("calculating dp variance for %s", str(sample))
     _sample = np.array(sample)
     _sample.sort()
     trimmed_sample = _sample[m : len(sample) - m]
-    s = smooth_sensitivity(trimmed_sample, mean, beta, L, U)
+    s = smooth_sensitivity(trimmed_sample, mean, beta, L, U, dispersion)
     scale = math.sqrt(2) * s / epsilon
     rng = np.random.default_rng(seed = seed)
     noise = rng.standard_cauchy(size = 1)[0] * scale
-    return np.std(trimmed_sample) + noise # type: ignore
-
+    return dispersion_fun(trimmed_sample) + noise # type: ignore
 
 def smooth_sensitivity(
         sample: np.ndarray,
@@ -51,10 +100,10 @@ def smooth_sensitivity(
         beta: float,
         L: float,
         U: float,
-        fun: str = 'std'
+        dispersion: str
     ) -> float:
-    """Compute the beta-smooth sensitivity of the std function on the
-    given sample.
+    """Compute the beta-smooth sensitivity of a dispersion function on
+    the given sample.
 
     Parameters
     ----------
@@ -68,10 +117,20 @@ def smooth_sensitivity(
         The domain specific lower bound on the values of `sample`.
     U : float
         The domain specific upper bound on the values of `sample`.
+    dispersion : str
+        One of 'var' or 'std'.
     """
+    if dispersion == 'std':
+        dispersion_fun = np.std
+    elif dispersion == 'var':
+        dispersion_fun = np.var
+    else:
+        raise ValueError(
+            "Expected one of 'var' or 'std'. Got {}.".format(dispersion)
+        )
     logging.debug("calculating smooth sensitivity for %s", str(sample))
     local_sensitivities = _local_sensitivities(
-        sample, L, U, mean
+        sample, L, U, mean, dispersion_fun
     )
     discounted_sensitivities = [
         loc_sens * math.exp(-beta * distance)
@@ -84,7 +143,8 @@ def _local_sensitivities(
         sample: np.ndarray,
         L: float,
         U: float,
-        mean: float
+        mean: float,
+        dispersion: Callable[[np.ndarray], float]
     ) -> Sequence[Tuple[float, int]]:
     """Compute the local sensitivities of all the relevant k-neighbors,
     for k = 0, …, n, of `sample."""
@@ -94,15 +154,17 @@ def _local_sensitivities(
         wc_neighbor1 = _worst_case_k_neighbor(
             k, sample,
             'max_var',
-            L, U, mean
+            L, U, mean,
+            dispersion
         )
-        ls1 = _local_sensitivity(wc_neighbor1, k, L, U, mean)
+        ls1 = _local_sensitivity(wc_neighbor1, k, L, U, mean, dispersion)
         wc_neighbor2 = _worst_case_k_neighbor(
             k, sample,
             'min_var',
-            L, U, mean
+            L, U, mean,
+            dispersion
         )
-        ls2 = _local_sensitivity(wc_neighbor2, k, L, U, mean)
+        ls2 = _local_sensitivity(wc_neighbor2, k, L, U, mean, dispersion)
 
         sensitivities.append((max(ls1, ls2), k))
     logging.debug("local sensitivities %s", str(sensitivities))
@@ -114,7 +176,8 @@ def _worst_case_k_neighbor(
         mode: str,
         L: float,
         U: float,
-        mean: float
+        mean: float,
+        dispersion: Callable[[np.ndarray], float]
     ) -> np.ndarray:
     """Compute k-neighbors which are good candidate for having the
     maximal local sensitivity among all k-neighbors of `sample`.
@@ -138,7 +201,9 @@ def _worst_case_k_neighbor(
             np.concatenate([extr, min_var_complement])
             for extr in _extreme_value_combinations(k, L, U)
         )
-        worst_case = max(worst_case_candidates, key = lambda seq: np.std(seq)) # type: ignore
+        worst_case = max(
+            worst_case_candidates, key = lambda seq: dispersion(seq)
+        ) # type: ignore
     else:
         raise ValueError("Unsupported mode: {}".format(mode))
     logging.debug("worst case k-neighbor %s", str(worst_case))
@@ -165,23 +230,35 @@ def _local_sensitivity(
         k: int,
         L: float,
         U: float,
-        mean: float
+        mean: float,
+        dispersion: Callable[[np.ndarray], float]
     ) -> float:
     logging.debug("calculating local sensitivity for %s", str(sample))
-    std = np.std(sample)
-    mean = np.mean(sample)
+    disp = dispersion(sample)
+    sample_mean = np.mean(sample)
     n = len(sample)
-    dist_from_std = 0
+    dist_from_disp = 0.0
     for i in itertools.chain((0,), range(k - 1, sample.size)):
-        base_mean, base_var = _mean_var_without(sample[i], mean, std ** 2, n)
-        dists = [
-            abs(std - _recurrent_std(e, base_mean, base_var, n))
-            for e in [L, U, mean]
-        ]
-        dist_from_std = max([dist_from_std] + dists)
-    local_sens = dist_from_std
+        if dispersion is np.std:
+            base_mean, base_var = _mean_var_without(
+                sample[i], sample_mean, disp ** 2, n
+            )
+            dists = [
+                abs(disp - _recurrent_std(e, base_mean, base_var, n))
+                for e in [L, U, mean]
+            ]
+        elif dispersion is np.var:
+            base_mean, base_var = _mean_var_without(sample[i], mean, disp, n)
+            dists = [
+                abs(disp - _recurrent_std(e, base_mean, base_var, n) ** 2)
+                for e in [L, U, mean]
+            ]
+        else:
+            raise ValueError()
+        dist_from_disp = max([dist_from_disp] + dists)
+    local_sens = dist_from_disp
     logging.debug("local sensitivity %f", local_sens)
-    return local_sens # type: ignore
+    return local_sens
 
 def _recurrent_std(
         e: float,
@@ -295,7 +372,7 @@ def k_max_variance_subset_indices(
 def speed_test() -> None:
     rng = np.random.default_rng(42)
     big_sample = rng.standard_normal(4500)
-    s = smooth_sensitivity(big_sample, 0, 0.2, -5, 5)
+    s = smooth_sensitivity(big_sample, 0, 0.2, -5, 5, 'std')
     print(
         "Smooth sensitivity of {} element array: {}".format(
             len(big_sample),
