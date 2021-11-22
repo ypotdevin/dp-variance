@@ -118,11 +118,6 @@ def _worst_case_k_neighbor(
     ) -> np.ndarray:
     """Compute k-neighbors which are good candidate for having the
     maximal local sensitivity among all k-neighbors of `sample`.
-
-    TODO
-    ----
-    Why are these, if correctly implemented, the only candidates we have
-    to consider?
     """
     logging.debug(
         "calculating worst case k-neighbor for k=%d, sample=%s, mode=%s",
@@ -136,11 +131,6 @@ def _worst_case_k_neighbor(
         # It doesn't matter where I add the new values, as the variance
         # will stay the same.
         worst_case = np.concatenate([np.tile(mean, k), max_var_complement])
-        #worst_case_candidates = (
-        #    np.concatenate([extr, max_var_complement])
-        #    for extr in _extreme_value_combinations(k, L, U)
-        #)
-        #worst_case = max(worst_case_candidates, key = lambda seq: np.std(seq))
     elif mode == 'min_var':
         min_var_indices = k_min_variance_subset_indices(k, sample)
         min_var_complement = sample[_complement(len(sample), min_var_indices)]
@@ -149,7 +139,6 @@ def _worst_case_k_neighbor(
             for extr in _extreme_value_combinations(k, L, U)
         )
         worst_case = max(worst_case_candidates, key = lambda seq: np.std(seq)) # type: ignore
-        #worst_case = np.concatenate([np.tile(mean, k), min_var_complement])
     else:
         raise ValueError("Unsupported mode: {}".format(mode))
     logging.debug("worst case k-neighbor %s", str(worst_case))
