@@ -181,6 +181,10 @@ def _worst_case_k_neighbor(
     ) -> np.ndarray:
     """Compute k-neighbors which are good candidate for having the
     maximal local sensitivity among all k-neighbors of `sample`.
+
+    Notes
+    -----
+    Currently only the dispersions 'var' and 'std' are supported.
     """
     logging.debug(
         "calculating worst case k-neighbor for k=%d, sample=%s, mode=%s",
@@ -188,6 +192,13 @@ def _worst_case_k_neighbor(
     )
     if k == 0:
         return sample
+    if not dispersion in [np.var, np.std]:
+        raise ValueError(
+            "Dispersion {} is currently not supported. Use 'var' or "
+            "'std' instead".format(dispersion)
+        )
+    # In this case it does not matter whether I calculate var or std,
+    # as both of them yield the same worst case.
     if mode == 'max_var':
         max_var_indices = k_max_variance_subset_indices(k, sample)
         max_var_complement = sample[_complement(len(sample), max_var_indices)]
@@ -197,13 +208,24 @@ def _worst_case_k_neighbor(
     elif mode == 'min_var':
         min_var_indices = k_min_variance_subset_indices(k, sample)
         min_var_complement = sample[_complement(len(sample), min_var_indices)]
-        worst_case_candidates = (
-            np.concatenate([extr, min_var_complement])
-            for extr in _extreme_value_combinations(k, L, U)
-        )
-        worst_case = max(
-            worst_case_candidates, key = lambda seq: dispersion(seq)
-        ) # type: ignore
+
+        evcs = _extreme_value_combinations(k, L, U)
+        evc = next(evcs)
+        worst_case = current_case = np.concatenate([evc, min_var_complement])
+        worst_case_var = current_var = np.var(current_case)
+        current_mean = np.mean(current_case)
+        n = len(sample)
+        for evc in evcs:
+            # Use the fact that in each iteration, an U is replaced by L
+            (previous_mean, previous_var) = _mean_var_without(
+                U, current_mean, current_var, n
+            )
+            (current_mean, current_var) = _mean_var_with(
+                L, previous_mean, previous_var, n
+            )
+            if current_var > worst_case_var:
+                worst_case_var = current_var
+                worst_case = np.concatenate([evc, min_var_complement])
     else:
         raise ValueError("Unsupported mode: {}".format(mode))
     logging.debug("worst case k-neighbor %s", str(worst_case))
@@ -244,13 +266,16 @@ def _local_sensitivity(
                 sample[i], sample_mean, disp ** 2, n
             )
             dists = [
-                abs(disp - _recurrent_std(e, base_mean, base_var, n))
+                abs(
+                    disp
+                    - math.sqrt(_mean_var_with(e, base_mean, base_var, n)[1])
+                )
                 for e in [L, U, mean]
             ]
         elif dispersion is np.var:
             base_mean, base_var = _mean_var_without(sample[i], mean, disp, n)
             dists = [
-                abs(disp - _recurrent_std(e, base_mean, base_var, n) ** 2)
+                abs(disp - _mean_var_with(e, base_mean, base_var, n)[1])
                 for e in [L, U, mean]
             ]
         else:
@@ -260,20 +285,20 @@ def _local_sensitivity(
     logging.debug("local sensitivity %f", local_sens)
     return local_sens
 
-def _recurrent_std(
+def _mean_var_with(
         e: float,
         previous_mean: float,
         previous_var: float,
         current_n: int
-    ) -> float:
-    """Calculate the standard deviation of a sample where `e` has been
-    added to, based on the previous sample mean and sample variance.
+    ) -> Tuple[float, float]:
+    """Calculate the sample mean and variance of a sample where `e` has
+    been added to, based on the previous sample mean and variance.
 
     Returns
     -------
-    std : float
-        The standard deviation of a sample where `e` has (implicitly)
-        been added to.
+    (mean, var) : (float, float)
+        The sample mean and variance of a sample where `e` has
+        (implicitly) been added to.
 
     Notes
     -----
@@ -285,7 +310,7 @@ def _recurrent_std(
     new_var = previous_var \
               + ((e - previous_mean) * (e - new_mean) - previous_var) \
                 / current_n
-    return math.sqrt(new_var)
+    return (new_mean, new_var)
 
 def _mean_var_without(
         e: float,

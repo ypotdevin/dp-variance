@@ -1,6 +1,6 @@
 import itertools
 import math
-from typing import Optional, Sequence
+from typing import Callable, Optional, Sequence
 
 import numpy as np
 
@@ -62,15 +62,18 @@ def test_k_max_variance_subset_indices(
         assert np.array_equal(subset2, subset3)
         assert np.std(subset2) == np.std(subset3)
 
-def test__recurrent_std(n: int = 100, seed: Optional[int] = None) -> None:
+def test__mean_var_with(n: int = 100, seed: Optional[int] = None) -> None:
     rng = np.random.default_rng(seed)
     for _ in range(n):
         sample = rng.random(size = n) - 0.5
         var_without_e = np.var(sample[:-1])
         mean_without_e = np.mean(sample[:-1])
         e = sample[-1]
-        std = dp_variance._recurrent_std(e, mean_without_e, var_without_e, n)
-        assert np.isclose(std, np.std(sample))
+        (mean, var) = dp_variance._mean_var_with(
+            e, mean_without_e, var_without_e, n
+        )
+        assert np.isclose(mean, np.mean(sample))
+        assert np.isclose(var, np.var(sample))
 
 def test__mean_var_without(n: int = 100, seed: Optional[int] = None) -> None:
     rng = np.random.default_rng(seed)
@@ -111,8 +114,7 @@ def _naive_local_sensitivity(
     local_sens = dist_from_std
     return local_sens
 
-def test_tunings(n: int = 200, seed: Optional[int] = None) -> None:
-    seed = 42
+def test__local_sensitivity(n: int = 200, seed: Optional[int] = None) -> None:
     rng = np.random.default_rng(seed)
     L = -0.5
     U = 0.5
@@ -135,3 +137,60 @@ def test_tunings(n: int = 200, seed: Optional[int] = None) -> None:
         ls1 = _naive_local_sensitivity(wcn, L, U, mean)
         ls2 = dp_variance._local_sensitivity(wcn, k, L, U, mean, np.std)
         assert(np.isclose(ls1, ls2))
+
+def _naive_worst_case_k_neighbor(
+        k: int,
+        sample: np.ndarray,
+        mode: str,
+        L: float,
+        U: float,
+        mean: float,
+        dispersion: Callable[[np.ndarray], float]
+    ) -> np.ndarray:
+    """Compute k-neighbors which are good candidate for having the
+    maximal local sensitivity among all k-neighbors of `sample`.
+    """
+    if k == 0:
+        return sample
+    if mode == 'max_var':
+        max_var_indices = dp_variance.k_max_variance_subset_indices(k, sample)
+        max_var_complement = sample[
+            dp_variance._complement(len(sample), max_var_indices)
+        ]
+        # It doesn't matter where I add the new values, as the variance
+        # will stay the same.
+        worst_case = np.concatenate([np.tile(mean, k), max_var_complement])
+    elif mode == 'min_var':
+        min_var_indices = dp_variance.k_min_variance_subset_indices(k, sample)
+        min_var_complement = sample[
+            dp_variance._complement(len(sample), min_var_indices)
+        ]
+        worst_case_candidates = (
+            np.concatenate([extr, min_var_complement])
+            for extr in dp_variance._extreme_value_combinations(k, L, U)
+        )
+        worst_case = max(
+            worst_case_candidates, key = lambda seq: dispersion(seq)
+        ) # type: ignore
+    else:
+        raise ValueError("Unsupported mode: {}".format(mode))
+    return worst_case # type: ignore
+
+def test__worst_case_k_neighbor(
+        n: int = 100, seed: Optional[int] = None
+    ) -> None:
+    seed = 42
+    rng = np.random.default_rng(seed)
+    L = -0.5
+    U = 0.5
+    mean = 0.0
+    for _ in range(n):
+        k = rng.integers(low = 0, high = n)
+        sample = rng.random(size = n) - 0.5
+        sample.sort()
+        wcn1 = _naive_worst_case_k_neighbor(k, sample, 'max_var', L, U, mean, np.var)
+        wcn2 = dp_variance._worst_case_k_neighbor(k, sample, 'max_var', L, U, mean, np.var)
+        assert np.array_equal(wcn1, wcn2)
+        wcn3 = _naive_worst_case_k_neighbor(k, sample, 'min_var', L, U, mean, np.var)
+        wcn4 = dp_variance._worst_case_k_neighbor(k, sample, 'min_var', L, U, mean, np.var)
+        assert np.array_equal(wcn3, wcn4)
