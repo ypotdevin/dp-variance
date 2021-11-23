@@ -243,9 +243,17 @@ def _extreme_value_combinations(
     ) -> Iterator[np.ndarray]:
     """For each value of i in [0, 1, …, `k`], yield the sequence i times
     `L`, followed by (k - i) times `U`.
+
+    Notes
+    -----
+    The iterator yields always the same object, which is manipulated in
+    place, rather than yielding fresh arrays.
     """
-    for i in range(k + 1):
-        yield np.concatenate([np.tile(L, i), np.tile(U, k - i)])
+    combination = np.tile(U, k)
+    yield combination
+    for i in range(k):
+        combination[i] = L
+        yield combination
 
 def _local_sensitivity(
         sample: np.ndarray,
