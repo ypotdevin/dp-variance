@@ -194,3 +194,6 @@ def test__worst_case_k_neighbor(
         wcn3 = _naive_worst_case_k_neighbor(k, sample, 'min_var', L, U, mean, np.var)
         wcn4 = dp_variance._worst_case_k_neighbor(k, sample, 'min_var', L, U, mean, np.var)
         assert np.array_equal(wcn3, wcn4)
+
+if __name__ == '__main__':
+    test_k_min_variance_subset_indices()

@@ -359,13 +359,34 @@ def k_min_variance_subset_indices(
     indices : np.ndarray
         The indices of the variance minimizing subset of `sample`.
         """
+    if k == 0:
+        return np.array([])
+    elif k == 1:
+        return np.array([0])
+
     n = len(sample)
     assert 0 <= k <= n
     indices = np.arange(n)
-    candidates = [
-        indices[i : i + k] for i in range(n - k + 1)
-    ]
-    return min(candidates, key = lambda inds: np.std(sample[inds])) # type: ignore
+    min_var_i = 0
+    min_var = current_var = np.var(sample[0 : k])
+    current_mean = np.mean(sample[0 : k])
+    for i in range(1, n - k + 1):
+        (previous_mean, previous_var) = _mean_var_without(
+            sample[i - 1],
+            current_mean,
+            current_var,
+            k
+        )
+        (current_mean, current_var) = _mean_var_with(
+            sample[i + k - 1],
+            previous_mean,
+            previous_var,
+            k
+        )
+        if current_var < min_var:
+            min_var = current_var
+            min_var_i = i
+    return cast(np.ndarray, indices[min_var_i : min_var_i + k])
 
 def k_max_variance_subset_indices(
         k: int,
@@ -383,15 +404,40 @@ def k_max_variance_subset_indices(
     indices : np.ndarray
         The indices of the variance maximizing subset of `sample`.
     """
+    if k == 0:
+        return np.array([])
+    elif k == 1:
+        return np.array([0])
+
     n = len(sample)
     assert 0 <= k <= n
     indices = np.arange(n)
-    candidates = [
+    max_var_i = 0
+    max_var = current_var = np.var(sample[n - k : n])
+    current_mean = np.mean(sample[n - k : n])
+    for i in range(1, k + 1):
+        (previous_mean, previous_var) = _mean_var_without(
+            sample[n - k + i - 1],
+            current_mean,
+            current_var,
+            k
+        )
+        (current_mean, current_var) = _mean_var_with(
+            sample[i - 1],
+            previous_mean,
+            previous_var,
+            k
+        )
+        if current_var > max_var:
+            max_var = current_var
+            max_var_i = i
+    return cast(
+        np.ndarray,
         np.concatenate(
-            [indices[0 : i], indices[n - k + i : n]]
-        ) for i in range(k + 1)
-    ]
-    return max(candidates, key = lambda inds: np.std(sample[inds])) # type: ignore
+            [indices[0 : max_var_i], indices[n - k + max_var_i : n]]
+        )
+    )
+
 
 
 def speed_test() -> None:
