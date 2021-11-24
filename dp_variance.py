@@ -128,6 +128,9 @@ def smooth_sensitivity(
         raise ValueError(
             "Expected one of 'var' or 'std'. Got {}.".format(dispersion)
         )
+    assert L <= sample.min() and sample.max() <= U, "min={}, max={}".format(
+        sample.min(), sample.max
+    )
     logging.debug("calculating smooth sensitivity for %s", str(sample))
     local_sensitivities = _local_sensitivities(
         sample, L, U, mean, dispersion_fun
@@ -281,7 +284,7 @@ def _local_sensitivity(
                 for e in [L, U, mean]
             ]
         elif dispersion is np.var:
-            base_mean, base_var = _mean_var_without(sample[i], mean, disp, n)
+            base_mean, base_var = _mean_var_without(sample[i], sample_mean, disp, n)
             dists = [
                 abs(disp - _mean_var_with(e, base_mean, base_var, n)[1])
                 for e in [L, U, mean]
@@ -318,6 +321,14 @@ def _mean_var_with(
     new_var = previous_var \
               + ((e - previous_mean) * (e - new_mean) - previous_var) \
                 / current_n
+    if new_var < 0.0:
+        raise ArithmeticError(
+            "Numerical instability detected. Variance is negative. "
+            "e={}, previous_mean={}, previous_var={}, current_n={}, "
+            "mean={}, var={}".format(
+                e, previous_mean, previous_var, current_n, new_mean, new_var
+            )
+        )
     return (new_mean, new_var)
 
 def _mean_var_without(
@@ -342,14 +353,30 @@ def _mean_var_without(
     https://stackoverflow.com/a/30876815/3389669 and therefore does not
     need to reiterate over the whole sample again.
     """
+    if n_with_e < 2:
+        raise ValueError(
+            "Mean and variance undefined for (to be) empty sequence."
+        )
     mean_without_e = mean_with_e - (e - mean_with_e) / (n_with_e - 1)
+    if n_with_e == 2:
+        return (mean_without_e, 0.0)
     # The first summand is multiplied by `n_with_e`, because the
     # aggregate in the cited formula is just the sum of squared
     # differences, not their average.
     var_without_e = (var_with_e * n_with_e
                         - (e - mean_without_e) * (e - mean_with_e)) \
                     / (n_with_e - 1)
-    return (mean_without_e, var_without_e)
+    if var_without_e < 0.0:
+        logging.warning(
+            "Numerical instability detected. Variance is negative. "
+            "e={}, mean_with_e={}, var_with_e={}, n_with_e={}, "
+            "mean={}, var={}. Setting variance to 0.0.".format(
+                e, mean_with_e, var_with_e, n_with_e, mean_without_e, var_without_e
+            )
+        )
+        return (mean_without_e, 0.0)
+    else:
+        return (mean_without_e, var_without_e)
 
 def k_min_variance_subset_indices(
         k: int,

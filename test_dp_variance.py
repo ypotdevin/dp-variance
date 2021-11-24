@@ -13,10 +13,11 @@ def naive_k_min_variance_subset(
     ) -> np.ndarray:
     canditate, var = None, math.inf
     for k_subset in itertools.combinations(sample, k):
-        current_var = np.std(k_subset)
+        _k_subset = np.array(k_subset)
+        current_var = np.var(_k_subset)
         if current_var < var:
             var = current_var
-            canditate = np.array(list(k_subset))
+            canditate = _k_subset
     return canditate # type: ignore
 
 def naive_k_max_variance_subset(
@@ -25,17 +26,18 @@ def naive_k_max_variance_subset(
     ) -> np.ndarray:
     canditate, var = None, -math.inf
     for k_subset in itertools.combinations(sample, k):
-        current_var = np.std(k_subset)
+        current_var = np.var(k_subset)
         if current_var > var:
             var = current_var
             canditate = np.array(list(k_subset))
     return canditate # type: ignore
 
 def test_k_min_variance_subset_indices(
-        n: int = 100,
+        n: int = 200,
         seed: Optional[int] = None
     ) -> None:
     rng = np.random.default_rng(seed = seed)
+    print(rng)
     for _ in range(n):
         k = rng.integers(low = 1, high = 15)
         sample = rng.random(size = 15) * 100 - 50
@@ -43,11 +45,10 @@ def test_k_min_variance_subset_indices(
         subset2 = naive_k_min_variance_subset(k, sample)
         subset3 = sample[dp_variance.k_min_variance_subset_indices(k, sample)]
         assert np.array_equal(subset2, subset3)
-        assert np.std(subset2) == np.std(subset3)
 
 
 def test_k_max_variance_subset_indices(
-        n: int = 100,
+        n: int = 200,
         seed: Optional[int] = None
     ) -> None:
     rng = np.random.default_rng(seed)
@@ -60,26 +61,60 @@ def test_k_max_variance_subset_indices(
         subset2 = naive_k_max_variance_subset(k, sample)
         subset3 = sample[dp_variance.k_max_variance_subset_indices(k, sample)]
         assert np.array_equal(subset2, subset3)
-        assert np.std(subset2) == np.std(subset3)
 
 def test__mean_var_with(n: int = 100, seed: Optional[int] = None) -> None:
+    _test__mean_var_with(2, 1.0, seed)
+    _test__mean_var_with(3, 10.0, seed)
+    _test__mean_var_with(n, 1e-100, seed)
+    _test__mean_var_with(n, 1.0, seed)
+    _test__mean_var_with(n, 1e100, seed)
+
+def _test__mean_var_with(n: int, scale: float, seed: Optional[int]) -> None:
     rng = np.random.default_rng(seed)
     for _ in range(n):
-        sample = rng.random(size = n) - 0.5
+        sample = (rng.random(size = n) - 0.5) * scale
         var_without_e = np.var(sample[:-1])
         mean_without_e = np.mean(sample[:-1])
         e = sample[-1]
         (mean, var) = dp_variance._mean_var_with(
             e, mean_without_e, var_without_e, n
         )
-        assert np.isclose(mean, np.mean(sample))
-        assert np.isclose(var, np.var(sample))
+        assert np.isclose(mean, np.mean(sample), rtol = 1e-9, atol = 1e-18)
+        assert np.isclose(var, np.var(sample), rtol = 1e-9, atol = 1e-18)
+
+def test_iteration__mean_var_with(
+        n: int = 100, seed: Optional[int] = None
+    ) -> None:
+    _test_iteration__mean_var_with(1, seed)
+    _test_iteration__mean_var_with(2, seed)
+    _test_iteration__mean_var_with(3, seed)
+    _test_iteration__mean_var_with(n, seed)
+
+
+def _test_iteration__mean_var_with(n: int, seed: Optional[int]) -> None:
+    rng = np.random.default_rng(seed)
+    sample = rng.random(size = n) - 0.5
+    online_mean = sample[0]
+    online_var = 0.0
+    for i in range(1, len(sample)):
+        (online_mean, online_var) = dp_variance._mean_var_with(
+            sample[i], online_mean, online_var, i + 1
+        )
+    assert np.isclose(online_mean, np.mean(sample), rtol = 1e-9, atol = 1e-18)
+    assert np.isclose(online_var, np.var(sample), rtol = 1e-9, atol = 1e-18)
 
 def test__mean_var_without(n: int = 100, seed: Optional[int] = None) -> None:
+    _test__mean_var_without(2, 1.0, seed)
+    _test__mean_var_without(3, 10.0, seed)
+    _test__mean_var_without(n, 1e-100, seed)
+    _test__mean_var_without(n, 1.0, seed)
+    _test__mean_var_without(n, 1e100, seed)
+
+def _test__mean_var_without(n: int, scale: float, seed: Optional[int]) -> None:
     rng = np.random.default_rng(seed)
     for _ in range(n):
         k = rng.integers(low = 0, high = n)
-        sample = rng.random(size = n) - 0.5
+        sample = (rng.random(size = n) - 0.5) * scale
         sample_var = np.var(sample)
         sample_mean = np.mean(sample)
         e = sample[k]
@@ -90,8 +125,54 @@ def test__mean_var_without(n: int = 100, seed: Optional[int] = None) -> None:
             n_with_e = n
         )
         sample_without_e = np.delete(sample, k)
-        assert np.isclose(mean, np.mean(sample_without_e))
-        assert np.isclose(var, np.var(sample_without_e))
+        assert np.isclose(
+            mean, np.mean(sample_without_e), rtol = 1e-9, atol = 1e-18
+        )
+        assert np.isclose(
+            var, np.var(sample_without_e), rtol = 1e-9, atol = 1e-18
+        )
+
+def test_iteration__mean_var_without(
+        n: int = 100, seed: Optional[int] = None
+    ) -> None:
+    _test_iteration__mean_var_without(1, seed)
+    _test_iteration__mean_var_without(2, seed)
+    _test_iteration__mean_var_without(3, seed)
+    _test_iteration__mean_var_without(n, seed)
+
+def _test_iteration__mean_var_without(n: int, seed: Optional[int]) -> None:
+    rng = np.random.default_rng(seed)
+    sample = rng.random(size = n) - 0.5
+    online_mean = np.mean(sample)
+    online_var = np.var(sample)
+    for i in range(len(sample) - 2):
+        (online_mean, online_var) = dp_variance._mean_var_without(
+            sample[i], online_mean, online_var, n - i
+        )
+    assert np.isclose(online_mean, np.mean(sample[-2:]), rtol = 1e-9, atol = 1e-18)
+    assert np.isclose(online_var, np.var(sample[-2:]), rtol = 1e-9, atol = 1e-18)
+
+def test_composition__mean_var_with_without(
+        n: int = 100, scale: float = 1.0, seed: Optional[int] = None
+    ) -> None:
+    _test_composition__mean_var__mean_var_without(2, scale, seed)
+    _test_composition__mean_var__mean_var_without(3, scale, seed)
+    _test_composition__mean_var__mean_var_without(4, scale, seed)
+    _test_composition__mean_var__mean_var_without(n, scale, seed)
+
+def _test_composition__mean_var__mean_var_without(
+        n: int, scale: float, seed: Optional[int]
+    ) -> None:
+    rng = np.random.default_rng(seed)
+    sample = (rng.random(size = n) - 0.5) * scale
+    mean = np.mean(sample)
+    var = np.var(sample)
+    for i in range(n - 2):
+        (mean, var) = dp_variance._mean_var_without(sample[i], mean, var, n - i)
+    for i in range(n - 2):
+        (mean, var) = dp_variance._mean_var_with(sample[i], mean, var, i + 3)
+    assert np.isclose(mean, np.mean(sample), rtol = 1e-9, atol = 1e-18)
+    assert np.isclose(var, np.var(sample), rtol = 1e-9, atol = 1e-18)
 
 def _naive_local_sensitivity(
         sample: np.ndarray,
