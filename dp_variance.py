@@ -91,7 +91,7 @@ def _dp_disp(
     s = smooth_sensitivity(trimmed_sample, mean, beta, L, U, dispersion)
     scale = math.sqrt(2) * s / epsilon
     rng = np.random.default_rng(seed = seed)
-    noise = rng.standard_cauchy(size = 1)[0] * scale
+    noise = rng.standard_cauchy() * scale
     return dispersion_fun(trimmed_sample) + noise # type: ignore
 
 def smooth_sensitivity(
