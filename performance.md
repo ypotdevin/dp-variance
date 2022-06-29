@@ -1,6 +1,6 @@
 Aggregated performance of differentially private rMSE estimation for various budgets, on *normally* distributed samples of various sizes, various locations and various scales:
 
-|        loc |       scale |   epsilon |   size |       target |              mean |              std |               min |               q25 |               q50 |              q75 |              max |
+|        loc |       scale |   epsilon |   size |       target (leaky rMSE) |              mean (of DP rMSE) |              std (of DP rMSE) |               min |               25% |               50% |              75% |              max |
 |------------|-------------|-----------|--------|--------------|-------------------|------------------|-------------------|-------------------|-------------------|------------------|------------------|
 |      0     |      1      |      0.01 |      1 |    0.454974  |     114.031       |   1308.92        |   -1250.06        |    -130.327       |     -27.1829      |     63.4645      |   7921.4         |
 |      0     |      1      |      0.01 |     10 |    0.902502  |     -52.3722      |    837.001       |   -2905.7         |     -71.0316      |      31.0121      |    105.267       |   2228.27        |
