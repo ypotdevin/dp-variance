@@ -12,6 +12,7 @@ privacy budgets $\epsilon \in \Set{0.01, 0.1, 1.0, 10.0}$
 we estimated the DP sample variance 10 times and show the statistics in [Table 1](table_1.md).
 The lower bounds $L$ and upper bounds $U$ were set to the sample minimum and sample maximum, respectively.
 The parameter β, (for the calculation of the β-smooth sensitivity) is set to $\frac{\epsilon}{6}$.
+The parameter $m$ is set in a way, such that the lower 10% and upper 10% of the points in a sample are discarded.
 
 Averaged over the locations and scales, the approximation quality of our implementation is shown in [Table 2](table_2.md).
 
